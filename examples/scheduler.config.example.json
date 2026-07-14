@@ -1,0 +1,135 @@
+{
+  "settings": {
+    "claudeCommand": "claude",
+    "maxConcurrentRuns": 2,
+    "tickSeconds": 15,
+    "watchIntervalSeconds": 5,
+    "reportsDir": "reports",
+    "logsDir": "logs",
+    "stateFile": ".scheduler-state.json",
+    "web": {
+      "enabled": true,
+      "host": "127.0.0.1",
+      "port": 8787,
+      "token": null
+    },
+    "notify": {
+      "command": null,
+      "webhookUrl": null,
+      "onSuccess": true,
+      "onFailure": true
+    }
+  },
+  "tasks": [
+    {
+      "id": "daily-morning-report",
+      "name": "毎朝9時: 日次レポートスキルを実行",
+      "enabled": true,
+      "trigger": { "type": "daily", "at": "09:00" },
+      "action": { "skill": "daily-report" }
+    },
+    {
+      "id": "weekly-friday-wrapup",
+      "name": "毎週金曜17:30: 週次まとめ",
+      "enabled": true,
+      "trigger": { "type": "weekly", "days": ["金"], "at": "17:30" },
+      "action": { "skill": "weekly-wrapup" }
+    },
+    {
+      "id": "monthly-invoice",
+      "name": "毎月末9:00: 月次処理",
+      "enabled": true,
+      "trigger": { "type": "monthly", "day": "last", "at": "09:00" },
+      "action": { "skill": "monthly-close" }
+    },
+    {
+      "id": "hourly-check",
+      "name": "30分ごと: 進捗チェック",
+      "enabled": false,
+      "trigger": { "type": "interval", "every": "30m" },
+      "action": { "prompt": "TODO.md を読んで、期限が近いタスクがあれば一覧にしてください。", "allowedTools": ["Read", "Glob", "Grep"] }
+    },
+    {
+      "id": "weekday-cron",
+      "name": "平日9〜18時の毎時0分（cron式）",
+      "enabled": false,
+      "trigger": { "type": "cron", "expression": "0 9-18 * * 1-5" },
+      "action": { "skill": "status-check" }
+    },
+    {
+      "id": "one-shot",
+      "name": "指定日時に1回だけ実行",
+      "enabled": false,
+      "trigger": { "type": "once", "at": "2026-08-01 10:00" },
+      "action": { "prompt": "リリースチェックリストを確認して結果を報告して。" }
+    },
+    {
+      "id": "inbox-csv",
+      "name": "inboxにCSVが入ったら分析（フォルダに入った時）",
+      "enabled": true,
+      "trigger": {
+        "type": "folder_entered",
+        "path": "./inbox",
+        "pattern": ["*.csv", "*.xlsx"],
+        "recursive": true
+      },
+      "action": {
+        "prompt": "ファイル {path} を読み込み、データの概要と気になる点を日本語でまとめてください。",
+        "allowedTools": ["Read", "Bash(head *)", "Bash(wc *)"]
+      },
+      "options": { "retries": 1 }
+    },
+    {
+      "id": "src-modified",
+      "name": "ソースが更新されたらレビュー",
+      "enabled": false,
+      "trigger": {
+        "type": "file_modified",
+        "path": "./src",
+        "pattern": "*.js",
+        "batch": true
+      },
+      "action": { "prompt": "次のファイルが変更されました:\n{path}\n変更内容を確認して問題があれば指摘してください。" }
+    },
+    {
+      "id": "file-deleted-alert",
+      "name": "重要フォルダからファイルが削除されたら記録",
+      "enabled": false,
+      "trigger": { "type": "file_deleted", "path": "./important" },
+      "action": { "prompt": "ファイル {path} が削除されました。deleted-log.md に日時と共に追記してください。", "permissionMode": "acceptEdits" }
+    },
+    {
+      "id": "health-check",
+      "name": "ヘルスチェックが失敗から回復した時ではなく、成立した瞬間に通知",
+      "enabled": false,
+      "trigger": {
+        "type": "condition",
+        "command": "! curl -sf --max-time 10 https://example.com/health",
+        "every": "5m",
+        "mode": "edge"
+      },
+      "action": { "prompt": "サービス https://example.com のヘルスチェックが失敗しました。logs/ 以下を調査して原因の仮説を報告してください。", "allowedTools": ["Read", "Glob", "Grep"] }
+    },
+    {
+      "id": "deploy-hook",
+      "name": "デプロイ完了Webhookを受けたら確認",
+      "enabled": false,
+      "trigger": { "type": "webhook", "token": "change-me-secret" },
+      "action": { "prompt": "デプロイ通知を受信しました。ペイロード: {payload}\n内容を要約して報告してください。" }
+    },
+    {
+      "id": "on-startup",
+      "name": "スケジューラー起動時に状況報告",
+      "enabled": false,
+      "trigger": { "type": "startup" },
+      "action": { "prompt": "reports/history.jsonl の直近の実行結果を読んで、失敗しているタスクがないか報告して。", "allowedTools": ["Read"] }
+    },
+    {
+      "id": "manual-only",
+      "name": "ダッシュボードのボタンから手動実行する用",
+      "enabled": true,
+      "trigger": { "type": "manual" },
+      "action": { "skill": "adhoc-analysis" }
+    }
+  ]
+}

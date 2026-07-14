@@ -1,0 +1,488 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Claude Skill Scheduler</title>
+<style>
+  :root {
+    --bg: #f5f6f8; --card: #ffffff; --text: #1a1d21; --muted: #667085;
+    --border: #e4e7ec; --accent: #4a5fc1; --accent-text: #ffffff;
+    --ok: #157f3d; --ng: #b42318; --warn: #b54708; --chip: #eef1f6;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #101418; --card: #1a2027; --text: #e6e9ed; --muted: #98a2b3;
+      --border: #2c343d; --accent: #7c8fe8; --accent-text: #0f1320; --chip: #232b34;
+      --ok: #4cc38a; --ng: #f97066; --warn: #f7b27a;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+    font-family: "Hiragino Sans", "Noto Sans JP", "Yu Gothic UI", system-ui, sans-serif; font-size: 14px; }
+  header { display: flex; align-items: center; gap: 12px; padding: 14px 20px;
+    background: var(--card); border-bottom: 1px solid var(--border); position: sticky; top: 0; z-index: 5; }
+  header h1 { font-size: 16px; margin: 0; }
+  header .stat { color: var(--muted); font-size: 12px; }
+  main { max-width: 1100px; margin: 0 auto; padding: 20px; display: grid; gap: 20px; }
+  section { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 16px; }
+  section h2 { margin: 0 0 12px; font-size: 15px; display: flex; align-items: center; gap: 10px; }
+  .spacer { flex: 1; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; font-size: 12px; white-space: nowrap; }
+  td .sub { color: var(--muted); font-size: 12px; }
+  .chip { display: inline-block; background: var(--chip); border-radius: 6px; padding: 2px 8px;
+    font-size: 12px; margin: 1px 2px 1px 0; white-space: nowrap; }
+  .ok { color: var(--ok); } .ng { color: var(--ng); } .warn { color: var(--warn); }
+  button { border: 1px solid var(--border); background: var(--card); color: var(--text);
+    border-radius: 7px; padding: 6px 12px; cursor: pointer; font-size: 13px; }
+  button:hover { border-color: var(--accent); }
+  button.primary { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+  button.small { padding: 3px 9px; font-size: 12px; }
+  button.danger:hover { border-color: var(--ng); color: var(--ng); }
+  .actions { display: flex; gap: 6px; flex-wrap: wrap; }
+  dialog { border: 1px solid var(--border); border-radius: 12px; background: var(--card); color: var(--text);
+    max-width: 720px; width: 92vw; padding: 20px; }
+  dialog::backdrop { background: rgba(0,0,0,.45); }
+  form.grid { display: grid; gap: 10px; }
+  label.field { display: grid; gap: 4px; font-size: 12px; color: var(--muted); }
+  input, select, textarea { background: var(--bg); color: var(--text); border: 1px solid var(--border);
+    border-radius: 7px; padding: 7px 9px; font-size: 13px; font-family: inherit; width: 100%; }
+  textarea.code { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; min-height: 180px; }
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .row3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
+  .dow { display: flex; gap: 4px; flex-wrap: wrap; }
+  .dow label { display: flex; gap: 3px; align-items: center; background: var(--chip);
+    border-radius: 6px; padding: 4px 8px; cursor: pointer; color: var(--text); }
+  .dow input { width: auto; }
+  .hint { font-size: 11px; color: var(--muted); }
+  pre.report { white-space: pre-wrap; background: var(--bg); border: 1px solid var(--border);
+    border-radius: 8px; padding: 12px; max-height: 60vh; overflow: auto; font-size: 13px;
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
+  #toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
+    background: var(--text); color: var(--bg); padding: 9px 16px; border-radius: 8px;
+    font-size: 13px; opacity: 0; transition: opacity .3s; pointer-events: none; z-index: 50; }
+  #toast.show { opacity: .95; }
+  .switch { position: relative; width: 36px; height: 20px; display: inline-block; }
+  .switch input { display: none; }
+  .switch span { position: absolute; inset: 0; background: var(--border); border-radius: 20px; transition: .2s; }
+  .switch span::after { content: ""; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px;
+    background: var(--card); border-radius: 50%; transition: .2s; }
+  .switch input:checked + span { background: var(--accent); }
+  .switch input:checked + span::after { transform: translateX(16px); }
+</style>
+</head>
+<body>
+<header>
+  <h1>🗓 Claude Skill Scheduler</h1>
+  <span class="stat" id="statusLine">読み込み中…</span>
+  <span class="spacer"></span>
+  <button id="refreshBtn" class="small">再読み込み</button>
+</header>
+
+<main>
+  <section>
+    <h2>タスク一覧
+      <span class="spacer"></span>
+      <button class="primary" id="addBtn">＋ タスクを追加</button>
+    </h2>
+    <table>
+      <thead><tr>
+        <th>有効</th><th>タスク</th><th>トリガー</th><th>次回実行</th><th>前回</th><th>操作</th>
+      </tr></thead>
+      <tbody id="taskRows"></tbody>
+    </table>
+    <p class="hint" id="noTasks" hidden>タスクがありません。「＋ タスクを追加」から作成してください。</p>
+  </section>
+
+  <section>
+    <h2>実行履歴 <span class="spacer"></span><span class="hint">最新50件・10秒ごとに自動更新</span></h2>
+    <table>
+      <thead><tr>
+        <th>開始</th><th>タスク</th><th>きっかけ</th><th>結果</th><th>所要</th><th>レポート</th>
+      </tr></thead>
+      <tbody id="historyRows"></tbody>
+    </table>
+    <p class="hint" id="noHistory" hidden>まだ実行履歴がありません。</p>
+  </section>
+</main>
+
+<dialog id="addDialog">
+  <h2 id="addTitle">タスクを追加</h2>
+  <form class="grid" id="addForm" method="dialog">
+    <label class="field">タスク名
+      <input name="name" placeholder="例: 毎朝の日次レポート" required>
+    </label>
+
+    <label class="field">いつ実行する？（トリガー）
+      <select name="triggerType" id="triggerType">
+        <optgroup label="時間で実行">
+          <option value="daily">毎日（時刻指定）</option>
+          <option value="weekly">毎週（曜日と時刻）</option>
+          <option value="monthly">毎月（日にちと時刻）</option>
+          <option value="interval">一定間隔ごと（例: 30分ごと）</option>
+          <option value="once">指定日時に1回だけ</option>
+          <option value="cron">cron式（上級者向け）</option>
+          <option value="startup">スケジューラー起動時</option>
+        </optgroup>
+        <optgroup label="ファイル・フォルダの変化で実行">
+          <option value="folder_entered">フォルダに何かが入った時</option>
+          <option value="file_created">ファイルが作成された時</option>
+          <option value="file_modified">ファイルが更新された時</option>
+          <option value="file_deleted">ファイルが削除された時</option>
+          <option value="folder_created">フォルダが作成された時</option>
+          <option value="folder_changed">フォルダ内に何か変化があった時</option>
+        </optgroup>
+        <optgroup label="その他">
+          <option value="condition">コマンドの条件が成立した時</option>
+          <option value="webhook">Webhookを受信した時</option>
+          <option value="manual">手動実行のみ</option>
+        </optgroup>
+      </select>
+    </label>
+
+    <div id="triggerFields" class="grid" style="display:grid;gap:10px"></div>
+
+    <label class="field">何を実行する？
+      <select name="actionType" id="actionType">
+        <option value="skill">スキル / スラッシュコマンドを実行</option>
+        <option value="prompt">プロンプトを直接実行</option>
+      </select>
+    </label>
+    <div id="skillFields" class="row">
+      <label class="field">スキル名
+        <input name="skill" list="skillList" placeholder="例: daily-report">
+        <datalist id="skillList"></datalist>
+      </label>
+      <label class="field">スキルへの引数（省略可）
+        <input name="args" placeholder="例: {path}">
+      </label>
+    </div>
+    <label class="field" id="promptField" hidden>プロンプト
+      <textarea name="prompt" rows="3" placeholder="例: ファイル {path} を読んで要点を3行にまとめて"></textarea>
+    </label>
+    <p class="hint">使えるプレースホルダ: {path} {file} {dir} {event} {payload} {output} {now} {taskName}</p>
+
+    <div class="row3">
+      <label class="field">作業ディレクトリ
+        <input name="cwd" value="." placeholder=".">
+      </label>
+      <label class="field">権限モード
+        <select name="permissionMode">
+          <option value="default">default（安全・確認あり）</option>
+          <option value="acceptEdits">acceptEdits（編集を自動許可）</option>
+          <option value="bypassPermissions">bypassPermissions（全許可・注意）</option>
+          <option value="plan">plan（計画のみ）</option>
+        </select>
+      </label>
+      <label class="field">タイムアウト（分）
+        <input name="timeoutMinutes" type="number" value="15" min="1">
+      </label>
+    </div>
+    <label class="field">許可するツール（カンマ区切り・省略可）
+      <input name="allowedTools" placeholder="例: Read,Glob,Grep,Bash(git *)">
+    </label>
+
+    <div class="actions" style="justify-content:flex-end">
+      <button type="button" id="cancelAdd">キャンセル</button>
+      <button class="primary" type="submit">保存</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="editDialog">
+  <h2>タスクを編集（JSON）</h2>
+  <form class="grid" id="editForm" method="dialog">
+    <textarea class="code" id="editJson" spellcheck="false"></textarea>
+    <div class="actions" style="justify-content:flex-end">
+      <button type="button" id="cancelEdit">キャンセル</button>
+      <button class="primary" type="submit">保存</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="reportDialog">
+  <h2 id="reportTitle">実行レポート</h2>
+  <pre class="report" id="reportBody"></pre>
+  <div class="actions" style="justify-content:flex-end;margin-top:10px">
+    <button id="closeReport">閉じる</button>
+  </div>
+</dialog>
+
+<div id="toast"></div>
+
+<script>
+"use strict";
+const $ = (sel) => document.querySelector(sel);
+let token = localStorage.getItem("sched-token") || new URLSearchParams(location.search).get("token") || "";
+if (token) localStorage.setItem("sched-token", token);
+
+async function api(path, options = {}) {
+  const headers = { "content-type": "application/json", ...(options.headers || {}) };
+  if (token) headers.authorization = "Bearer " + token;
+  const res = await fetch(path, { ...options, headers });
+  if (res.status === 401) {
+    token = prompt("APIトークンを入力してください（settings.web.token）") || "";
+    if (token) { localStorage.setItem("sched-token", token); return api(path, options); }
+  }
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok || body.ok === false) throw new Error(body.message || ("HTTP " + res.status));
+  return body;
+}
+
+function toast(msg, isError) {
+  const el = $("#toast");
+  el.textContent = msg;
+  el.style.background = isError ? "var(--ng)" : "var(--text)";
+  el.classList.add("show");
+  setTimeout(() => el.classList.remove("show"), 2600);
+}
+
+function esc(s) {
+  return String(s ?? "").replace(/[&<>"']/g, (c) =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+function fmt(iso) {
+  if (!iso) return "-";
+  const d = new Date(iso);
+  const p = (n) => String(n).padStart(2, "0");
+  return `${p(d.getMonth() + 1)}/${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+const STATUS = {
+  success: '<span class="ok">✅ 成功</span>', failure: '<span class="ng">❌ 失敗</span>',
+  timeout: '<span class="warn">⏱ タイムアウト</span>', error: '<span class="ng">🚫 起動エラー</span>',
+  running: '<span class="warn">⏳ 実行中</span>',
+};
+
+// ---------- 一覧描画 ----------
+async function refresh() {
+  try {
+    const [st, tasks, history] = await Promise.all([
+      api("/api/status"), api("/api/tasks"), api("/api/history?limit=50"),
+    ]);
+    const s = st.status;
+    $("#statusLine").textContent =
+      `稼働 ${Math.floor(s.uptimeSeconds / 3600)}時間${Math.floor((s.uptimeSeconds % 3600) / 60)}分 / ` +
+      `タスク ${s.enabledCount}/${s.taskCount} 有効 / 実行中 ${s.running.length} / 待機 ${s.queueLength}`;
+    renderTasks(tasks.tasks);
+    renderHistory(history.history);
+  } catch (e) {
+    $("#statusLine").textContent = "接続エラー: " + e.message;
+  }
+}
+
+function renderTasks(tasks) {
+  $("#noTasks").hidden = tasks.length > 0;
+  $("#taskRows").innerHTML = tasks.map((t) => {
+    const m = t.meta || {};
+    const action = t.action.skill ? "/" + t.action.skill + (t.action.args ? " " + t.action.args : "")
+      : (t.action.prompt || "").slice(0, 60);
+    return `<tr>
+      <td><label class="switch"><input type="checkbox" data-toggle="${esc(t.id)}" ${t.enabled ? "checked" : ""}><span></span></label></td>
+      <td><b>${esc(t.name)}</b><div class="sub">${esc(t.id)} — ${esc(action)}</div></td>
+      <td><span class="chip">${esc(m.description || t.trigger.type)}</span></td>
+      <td>${m.running ? STATUS.running : esc(fmt(m.nextRun))}</td>
+      <td>${m.lastStatus ? (STATUS[m.lastStatus] || esc(m.lastStatus)) : "-"}<div class="sub">${esc(fmt(m.lastRunAt))}</div></td>
+      <td class="actions">
+        <button class="small" data-run="${esc(t.id)}">▶ 実行</button>
+        <button class="small" data-edit="${esc(t.id)}">編集</button>
+        <button class="small danger" data-del="${esc(t.id)}">削除</button>
+      </td>
+    </tr>`;
+  }).join("");
+  window._tasks = tasks;
+}
+
+function renderHistory(history) {
+  $("#noHistory").hidden = history.length > 0;
+  $("#historyRows").innerHTML = history.map((r) => `<tr>
+    <td>${esc(fmt(r.startedAt))}</td>
+    <td><b>${esc(r.taskName)}</b></td>
+    <td><span class="chip">${esc(r.event || r.triggerType)}</span></td>
+    <td>${STATUS[r.status] || esc(r.status)}</td>
+    <td>${Math.round((r.durationMs || 0) / 1000)}秒</td>
+    <td><button class="small" data-report="${esc(r.runId)}" data-name="${esc(r.taskName)}">表示</button></td>
+  </tr>`).join("");
+}
+
+// ---------- 操作 ----------
+document.addEventListener("click", async (ev) => {
+  const b = ev.target.closest("[data-run],[data-del],[data-edit],[data-report]");
+  if (!b) return;
+  try {
+    if (b.dataset.run) {
+      await api(`/api/tasks/${encodeURIComponent(b.dataset.run)}/run`, { method: "POST" });
+      toast("実行キューに追加しました");
+      setTimeout(refresh, 800);
+    } else if (b.dataset.del) {
+      if (!confirm(`タスク「${b.dataset.del}」を削除しますか？`)) return;
+      await api(`/api/tasks/${encodeURIComponent(b.dataset.del)}`, { method: "DELETE" });
+      toast("削除しました");
+      refresh();
+    } else if (b.dataset.edit) {
+      const t = (window._tasks || []).find((x) => x.id === b.dataset.edit);
+      const { meta, ...clean } = t;
+      $("#editJson").value = JSON.stringify(clean, null, 2);
+      $("#editDialog").showModal();
+    } else if (b.dataset.report) {
+      const body = await api(`/api/runs/${encodeURIComponent(b.dataset.report)}/report`);
+      $("#reportTitle").textContent = "実行レポート: " + b.dataset.name;
+      $("#reportBody").textContent = body.content;
+      $("#reportDialog").showModal();
+    }
+  } catch (e) { toast(e.message, true); }
+});
+
+document.addEventListener("change", async (ev) => {
+  const t = ev.target.closest("[data-toggle]");
+  if (!t) return;
+  try {
+    await api(`/api/tasks/${encodeURIComponent(t.dataset.toggle)}`, {
+      method: "PATCH", body: JSON.stringify({ enabled: t.checked }),
+    });
+    toast(t.checked ? "有効にしました" : "無効にしました");
+    refresh();
+  } catch (e) { toast(e.message, true); refresh(); }
+});
+
+// ---------- トリガー入力フォーム ----------
+const DOW = ["日", "月", "火", "水", "木", "金", "土"];
+function triggerFieldsHtml(type) {
+  const at = `<label class="field">時刻 <input type="time" name="t_at" value="09:00"></label>`;
+  const watch = `
+    <label class="field">監視するフォルダ <input name="t_path" placeholder="./inbox" required></label>
+    <div class="row">
+      <label class="field">ファイル名パターン（省略可） <input name="t_pattern" placeholder="例: *.csv"></label>
+      <label class="field" style="align-self:end"><span><input type="checkbox" name="t_recursive" checked style="width:auto"> サブフォルダも監視する</span></label>
+    </div>`;
+  switch (type) {
+    case "daily": return at;
+    case "weekly": return `<div class="field"><span>曜日</span><div class="dow">${
+      DOW.map((d, i) => `<label><input type="checkbox" name="t_dow" value="${i}" ${i === 1 ? "checked" : ""}>${d}</label>`).join("")
+    }</div></div>${at}`;
+    case "monthly": return `<div class="row"><label class="field">日にち（1〜31 または last）
+      <input name="t_day" value="1"></label>${at}</div>`;
+    case "interval": return `<label class="field">間隔（例: 30m, 2h, 90s）<input name="t_every" value="30m" required></label>`;
+    case "once": return `<label class="field">日時 <input type="datetime-local" name="t_datetime" required></label>`;
+    case "cron": return `<label class="field">cron式（分 時 日 月 曜日）
+      <input name="t_expr" placeholder="例: 0 9 * * 1-5（平日9時）" required></label>`;
+    case "condition": return `
+      <label class="field">条件コマンド（終了コード0で成立）<input name="t_command" placeholder="例: curl -sf https://example.com/health" required></label>
+      <div class="row">
+        <label class="field">判定間隔 <input name="t_every" value="5m"></label>
+        <label class="field">発火モード <select name="t_mode">
+          <option value="edge">edge（成立した瞬間だけ）</option>
+          <option value="level">level（成立している間、間隔ごと）</option>
+        </select></label>
+      </div>`;
+    case "webhook": return `<label class="field">Webhookトークン（省略可・設定すると x-hook-token 必須）
+      <input name="t_token" placeholder="任意の秘密文字列"></label>
+      <p class="hint">受信URL: POST /hooks/&lt;タスクID&gt;</p>`;
+    case "startup": case "manual": return `<p class="hint">追加の設定はありません。</p>`;
+    default: return watch; // watch系
+  }
+}
+
+function buildTrigger(form, type) {
+  const v = (n) => form.elements[n]?.value?.trim();
+  switch (type) {
+    case "daily": return { type, at: v("t_at") };
+    case "weekly": {
+      const days = [...form.querySelectorAll('[name="t_dow"]:checked')].map((x) => Number(x.value));
+      return { type, days, at: v("t_at") };
+    }
+    case "monthly": return { type, day: v("t_day") === "last" ? "last" : Number(v("t_day")), at: v("t_at") };
+    case "interval": return { type, every: v("t_every") };
+    case "once": return { type, at: (v("t_datetime") || "").replace("T", " ") };
+    case "cron": return { type, expression: v("t_expr") };
+    case "condition": {
+      const t = { type, command: v("t_command"), every: v("t_every") || "5m", mode: v("t_mode") || "edge" };
+      return t;
+    }
+    case "webhook": {
+      const t = { type };
+      if (v("t_token")) t.token = v("t_token");
+      return t;
+    }
+    case "startup": case "manual": return { type };
+    default: {
+      const t = { type, path: v("t_path") };
+      if (v("t_pattern")) t.pattern = v("t_pattern");
+      if (!form.elements.t_recursive?.checked) t.recursive = false;
+      return t;
+    }
+  }
+}
+
+$("#triggerType").addEventListener("change", () => {
+  $("#triggerFields").innerHTML = triggerFieldsHtml($("#triggerType").value);
+});
+$("#actionType").addEventListener("change", () => {
+  const isSkill = $("#actionType").value === "skill";
+  $("#skillFields").hidden = !isSkill;
+  $("#promptField").hidden = isSkill;
+});
+
+$("#addBtn").addEventListener("click", async () => {
+  $("#triggerFields").innerHTML = triggerFieldsHtml($("#triggerType").value);
+  $("#addDialog").showModal();
+  try {
+    const body = await api("/api/skills");
+    $("#skillList").innerHTML = body.skills.map((s) => `<option value="${esc(s.name)}">${esc(s.description || s.kind)}</option>`).join("");
+  } catch { /* スキル一覧が取れなくても手入力できる */ }
+});
+$("#cancelAdd").addEventListener("click", () => $("#addDialog").close());
+$("#cancelEdit").addEventListener("click", () => $("#editDialog").close());
+$("#closeReport").addEventListener("click", () => $("#reportDialog").close());
+
+$("#addForm").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  const form = ev.target;
+  const v = (n) => form.elements[n]?.value?.trim();
+  const type = $("#triggerType").value;
+  const task = {
+    name: v("name"),
+    enabled: true,
+    trigger: buildTrigger(form, type),
+    action: {
+      cwd: v("cwd") || ".",
+      permissionMode: v("permissionMode"),
+      timeoutMinutes: Number(v("timeoutMinutes")) || 15,
+    },
+  };
+  if ($("#actionType").value === "skill") {
+    task.action.skill = v("skill");
+    if (v("args")) task.action.args = v("args");
+  } else {
+    task.action.prompt = v("prompt");
+  }
+  if (v("allowedTools")) task.action.allowedTools = v("allowedTools").split(",").map((s) => s.trim()).filter(Boolean);
+  try {
+    await api("/api/tasks", { method: "POST", body: JSON.stringify(task) });
+    $("#addDialog").close();
+    form.reset();
+    toast("タスクを追加しました");
+    refresh();
+  } catch (e) { toast(e.message, true); }
+});
+
+$("#editForm").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  let task;
+  try { task = JSON.parse($("#editJson").value); }
+  catch { toast("JSONの形式が不正です", true); return; }
+  try {
+    await api(`/api/tasks/${encodeURIComponent(task.id)}`, { method: "PUT", body: JSON.stringify(task) });
+    $("#editDialog").close();
+    toast("保存しました");
+    refresh();
+  } catch (e) { toast(e.message, true); }
+});
+
+$("#refreshBtn").addEventListener("click", refresh);
+refresh();
+setInterval(refresh, 10_000);
+</script>
+</body>
+</html>

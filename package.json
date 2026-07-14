@@ -1,0 +1,27 @@
+{
+  "name": "claude-skill-scheduler",
+  "version": "0.1.0",
+  "description": "Claude Code のスキルを条件（時間・ファイル・コマンド・Webhook）で自動実行して結果を報告するスケジューラー",
+  "type": "module",
+  "bin": {
+    "skill-scheduler": "bin/skill-scheduler.js"
+  },
+  "main": "src/daemon.js",
+  "scripts": {
+    "start": "node bin/skill-scheduler.js start",
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=18.17"
+  },
+  "keywords": [
+    "claude",
+    "claude-code",
+    "scheduler",
+    "automation",
+    "skills",
+    "cron",
+    "file-watcher"
+  ],
+  "license": "MIT"
+}
